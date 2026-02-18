@@ -614,7 +614,7 @@
     <string name="video_player_external">Ulkoinen äppi</string>
     <string name="playback_video_player_external_empty">Yhtäkään videosoitinta ei ole asennettuna, joka osaa toistaa Jellyfin videoita.</string>
     <string name="filters">Suodattimet</string>
-    <string name="pref_prerolls_enabled">Teatteritila</string>
+    <string name="pref_prerolls_enabled">Käytä teatteritilaa</string>
     <string name="pref_playback_media_segments">Mediaosiot</string>
     <string name="pref_playback_prerolls">Videospotit</string>
 </resources>
