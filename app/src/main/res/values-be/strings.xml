@@ -632,4 +632,10 @@
     <string name="filters">Фільтры</string>
     <string name="pref_subtitles_position">Водступ знізу</string>
     <string name="pref_playback_inactivity_prompt">Паведамленне пра неактыўнасць</string>
+    <string name="pref_subtitles_weight">Таўшчыня тэксту</string>
+    <string name="font_weight_500">Сярэдні</string>
+    <string name="font_weight_600">Паўтоўсты</string>
+    <string name="font_weight_700">Тоўсты</string>
+    <string name="font_weight_800">Экстра тоўсты</string>
+    <string name="font_weight_900">Чорны</string>
 </resources>
