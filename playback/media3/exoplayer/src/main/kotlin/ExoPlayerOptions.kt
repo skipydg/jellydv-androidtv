@@ -7,4 +7,6 @@ data class ExoPlayerOptions(
 	val preferFfmpeg: Boolean = false,
 	val enableDebugLogging: Boolean = false,
 	val baseDataSourceFactory: DataSource.Factory = DefaultHttpDataSource.Factory(),
+	val dvCompatMode: Boolean = false,
+	val dvForceCompatMode: Boolean = false,
 )

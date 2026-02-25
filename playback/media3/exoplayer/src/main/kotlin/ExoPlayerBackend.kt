@@ -15,6 +15,7 @@ import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import org.jellyfin.playback.media3.exoplayer.compat.DvCompatRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
@@ -75,7 +76,11 @@ class ExoPlayerBackend(
 		}
 
 		val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
-		val renderersFactory = DefaultRenderersFactory(context).apply {
+		val renderersFactory = if (exoPlayerOptions.dvCompatMode) {
+			DvCompatRenderersFactory(context, exoPlayerOptions.dvForceCompatMode)
+		} else {
+			DefaultRenderersFactory(context)
+		}.apply {
 			setEnableDecoderFallback(true)
 			setExtensionRendererMode(
 				when (exoPlayerOptions.preferFfmpeg) {
