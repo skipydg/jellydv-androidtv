@@ -9,6 +9,7 @@ import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.mediacodec.MediaCodecAdapter
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.video.VideoRendererEventListener
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * A [DefaultRenderersFactory] that injects [DvCompatVideoRenderer] to rewrite
@@ -18,6 +19,7 @@ import androidx.media3.exoplayer.video.VideoRendererEventListener
 class DvCompatRenderersFactory(
 	context: Context,
 	private val forceCompatMode: Boolean,
+	private val dvP7Hint: AtomicBoolean,
 ) : DefaultRenderersFactory(context) {
 
 	override fun buildVideoRenderers(
@@ -38,6 +40,7 @@ class DvCompatRenderersFactory(
 				allowedJoiningTimeMs = allowedVideoJoiningTimeMs,
 				enableDecoderFallback = enableDecoderFallback,
 				forceCompatMode = forceCompatMode,
+				dvP7Hint = dvP7Hint,
 				eventHandler = eventHandler,
 				eventListener = eventListener,
 			)
