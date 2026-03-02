@@ -53,11 +53,22 @@ class DvCompatVideoRenderer(
 ) {
 	// ── Detection ─────────────────────────────────────────────────────────────
 
-	private fun isDvProfile7(format: Format?): Boolean =
-		format != null &&
-			format.sampleMimeType == MimeTypes.VIDEO_DOLBY_VISION &&
-			(format.codecs?.startsWith("dvhe.07") == true ||
-				format.codecs?.startsWith("dvh1.07") == true)
+	private fun isDvProfile7(format: Format?): Boolean {
+		if (format == null || format.sampleMimeType != MimeTypes.VIDEO_DOLBY_VISION) return false
+		// Primary check: codec string
+		val codecs = format.codecs
+		if (codecs != null) {
+			return codecs.startsWith("dvhe.07") || codecs.startsWith("dvh1.07")
+		}
+		// Fallback: read profile directly from DVCC bytes when codec string is absent
+		return format.initializationData.any { bytes -> getDvccProfile(bytes) == 7 }
+	}
+
+	private fun getDvccProfile(bytes: ByteArray): Int {
+		if (bytes.size < 4) return -1
+		val word = ((bytes[2].toInt() and 0xFF) shl 8) or (bytes[3].toInt() and 0xFF)
+		return (word shr 9) and 0x7F
+	}
 
 	// ── Format patching ───────────────────────────────────────────────────────
 
@@ -71,10 +82,8 @@ class DvCompatVideoRenderer(
 			?.replace("dvhe.07", "dvhe.08")
 			?.replace("dvh1.07", "dvh1.08")
 
-		val p8InitData = format.initializationData.mapIndexed { index, bytes ->
-			// initializationData[1] is the dvcC box (DVCC record)
-			if (index == 1) patchDvccBytes(bytes) else bytes
-		}
+		// Scan all initializationData entries — patchDvccBytes validates profile==7 before touching anything
+		val p8InitData = format.initializationData.map { bytes -> patchDvccBytes(bytes) }
 
 		return format.buildUpon()
 			.setCodecs(p8Codecs)
