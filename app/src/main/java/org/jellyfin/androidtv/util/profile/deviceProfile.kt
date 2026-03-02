@@ -450,7 +450,7 @@ fun createDeviceProfile(
 
 		// When dvCompatMode is ON (and not forced), suppress EL exclusions so the server
 		// direct-plays Profile 7 streams. DvCompatVideoRenderer rewrites them as Profile 8.1.
-		val suppressElExclusion = dvCompatMode && !dvForceCompatMode
+		val suppressElExclusion = dvCompatMode
 
 		if (!supportsHevcDolbyVisionEL && !suppressElExclusion) {
 			add(VideoRangeType.DOVI_WITH_EL)
