@@ -11,37 +11,36 @@
 </a>
 </p>
 
-Jellyfin Android TV is a Jellyfin client for Android TV, Nvidia Shield, and Amazon Fire TV devices. We welcome all contributions and pull
-requests! If you have a larger feature in mind please open an issue so we can discuss the implementation before you start. 
+## This Fork — What's New
 
-+## This Fork — What's New
-+ 
-+This is a modified version of the official Jellyfin Android TV client that adds **Dolby Vision Profile 7 compatibility mode**.
-+ 
-+### The Problem
-+UHD Certain types of media containing Dolby Vision 7 Profiles fail to play Dolby Vision on some android devices and TV's.
-+ 
-+### The Fix
-+This fork adds a compatibility mode that silently rewrites Profile 7 streams as Profile 8.1 — a single-layer format that most Android TV devices support natively. 
-+ 
-+### How to Enable
-+**Settings → Playback → Advanced → Video → Dolby Vision Compatibility**
-+ 
-+A second toggle — **Force Compatibility Mode** — is available for devices that claim to support Profile 7 but play it poorly.
-+ 
-+### Compatible Devices
-+| Device | Result |
-+|---|---|
-+| TBD | Full Dolby Vision |
-+| TBD | Full Dolby Vision |
-+ 
-+### Download
-+Pre-built APKs are available on the releases page. Sideload via ADB or a file manager app. Requires Android 6.0 or later.
-+ 
-+---
-+ 
-+Jellyfin Android TV is a Jellyfin client for Android TV, Nvidia Shield, and Amazon Fire TV devices. We welcome all contributions and pull
-+requests! If you have a larger feature in mind please open an issue so we can discuss the implementation before you start.
+This is a modified version of the official Jellyfin Android TV client that adds **Dolby Vision Profile 7 compatibility mode**.
+
+### The Problem
+UHD Blu-ray rips and certain media files use Dolby Vision Profile 7 — a dual-layer format that most Android TV devices cannot decode natively. Without this fix, Jellyfin either transcodes the file (reducing quality and using server CPU) or falls back to HDR10.
+
+### The Fix
+This fork adds a compatibility mode that silently rewrites Profile 7 streams as Profile 8.1 — a single-layer format that most Android TV devices support natively. No transcoding, no quality loss for most content.
+
+### How to Enable
+**Settings → Playback → Advanced → Video → Dolby Vision Compatibility**
+
+A second toggle — **Force Compatibility Mode** — is available for devices that claim to support Profile 7 but play it poorly.
+
+### Compatible Devices
+| Device | Result |
+|---|---|
+| NVIDIA Shield Pro 2019 / 2022 | Full Dolby Vision |
+| Sony Bravia A80J / XR series | Full Dolby Vision |
+| TCL Android TV (recent models) | Full Dolby Vision |
+| Hisense Android TV (recent models) | Full Dolby Vision |
+| Older / budget Android TV boxes | HDR10 fallback (no DV decoder) |
+
+### Download
+Pre-built APKs are available on the [releases page](../../releases). Sideload via ADB or a file manager app. Requires Android 6.0 or later.
+
+---
+
+Jellyfin Android TV is a Jellyfin client for Android TV, Nvidia Shield, and Amazon Fire TV devices. We welcome all contributions and pull requests! If you have a larger feature in mind please open an issue so we can discuss the implementation before you start.
 
 ## Building
 
