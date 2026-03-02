@@ -76,11 +76,12 @@ class ExoPlayerBackend(
 		}
 
 		val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
-		val renderersFactory = if (exoPlayerOptions.dvCompatMode) {
-			DvCompatRenderersFactory(context, exoPlayerOptions.dvForceCompatMode)
-		} else {
-			DefaultRenderersFactory(context)
-		}.apply {
+		// DvCompatRenderersFactory is always active — it only fires for Profile 7 content.
+		// The user preference controls the device profile (whether the server direct-plays
+		// Profile 7 or transcodes), so end-to-end behaviour is unchanged. Using a conditional
+		// here caused a timing bug: ExoPlayerBackend is a singleton instantiated once at
+		// Koin startup, so a preference change after first use was silently ignored.
+		val renderersFactory = DvCompatRenderersFactory(context, exoPlayerOptions.dvForceCompatMode).apply {
 			setEnableDecoderFallback(true)
 			setExtensionRendererMode(
 				when (exoPlayerOptions.preferFfmpeg) {
