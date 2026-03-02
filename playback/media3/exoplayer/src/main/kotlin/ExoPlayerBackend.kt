@@ -25,6 +25,7 @@ import androidx.media3.extractor.ts.TsExtractor
 import androidx.media3.ui.SubtitleView
 import org.jellyfin.playback.core.backend.BasePlayerBackend
 import org.jellyfin.playback.core.mediastream.MediaStream
+import org.jellyfin.playback.core.mediastream.MediaStreamVideoTrack
 import org.jellyfin.playback.core.mediastream.PlayableMediaStream
 import org.jellyfin.playback.core.mediastream.mediaStream
 import org.jellyfin.playback.core.mediastream.mediatype.MediaType
@@ -39,6 +40,7 @@ import org.jellyfin.playback.core.ui.PlayerSurfaceView
 import org.jellyfin.playback.media3.exoplayer.support.getPlaySupportReport
 import org.jellyfin.playback.media3.exoplayer.support.toFormats
 import timber.log.Timber
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -54,6 +56,7 @@ class ExoPlayerBackend(
 	}
 
 	private var currentStream: PlayableMediaStream? = null
+	private val currentStreamIsDvP7 = AtomicBoolean(false)
 	private var subtitleView: SubtitleView? = null
 	private val audioPipeline = ExoPlayerAudioPipeline()
 	private val audioAttributeState = AudioAttributeState()
@@ -81,7 +84,7 @@ class ExoPlayerBackend(
 		// Profile 7 or transcodes), so end-to-end behaviour is unchanged. Using a conditional
 		// here caused a timing bug: ExoPlayerBackend is a singleton instantiated once at
 		// Koin startup, so a preference change after first use was silently ignored.
-		val renderersFactory = DvCompatRenderersFactory(context, exoPlayerOptions.dvForceCompatMode).apply {
+		val renderersFactory = DvCompatRenderersFactory(context, exoPlayerOptions.dvForceCompatMode, currentStreamIsDvP7).apply {
 			setEnableDecoderFallback(true)
 			setExtensionRendererMode(
 				when (exoPlayerOptions.preferFfmpeg) {
@@ -203,6 +206,9 @@ class ExoPlayerBackend(
 		if (currentStream == stream) return
 
 		currentStream = stream
+		currentStreamIsDvP7.set(
+			stream.tracks.filterIsInstance<MediaStreamVideoTrack>().any { it.isDolbyVisionP7 }
+		)
 
 		var preparedItemIndex = (0 until exoPlayer.mediaItemCount).firstOrNull { index ->
 			exoPlayer.getMediaItemAt(index).mediaId == stream.hashCode().toString()
@@ -257,6 +263,7 @@ class ExoPlayerBackend(
 	override fun stop() {
 		exoPlayer.stop()
 		currentStream = null
+		currentStreamIsDvP7.set(false)
 	}
 
 	override fun seekTo(position: Duration) {

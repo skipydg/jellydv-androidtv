@@ -16,6 +16,7 @@ import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
 import androidx.media3.exoplayer.video.MediaCodecVideoRenderer
 import androidx.media3.exoplayer.video.VideoRendererEventListener
 import timber.log.Timber
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * A [MediaCodecVideoRenderer] that rewrites Dolby Vision Profile 7 streams as Profile 8.1
@@ -28,10 +29,15 @@ import timber.log.Timber
  *   - Set dv_profile  : 7 → 8
  *   - Set el_present  : 1 → 0  (strip Enhancement Layer signaling)
  *
- * When the DVCC is absent from initializationData (Media3 may derive MIME/codecs from
- * BlockAddIDExtraData without storing it in initializationData), we synthesize proper
- * Profile 8 DVCC bytes from the codecs string so the DV hardware decoder is configured
- * correctly.
+ * Detection uses a two-tier strategy:
+ * 1. Media3 MIME/codecs: if sampleMimeType=VIDEO_DOLBY_VISION with dvhe.07/dvh1.07 codecs → P7
+ * 2. Jellyfin server hint ([dvP7Hint]): set when Jellyfin's pre-scan reports DOVI_WITH_EL.
+ *    This handles MKV rips with bloated CodecPrivate (e.g. MakeMKV) where Media3 sets
+ *    sampleMimeType=VIDEO_H265 instead of VIDEO_DOLBY_VISION, causing Media3-level detection
+ *    to fail even though the DVCC is present in MKV BlockAdditionMapping.
+ *
+ * When DVCC is absent from initializationData, a synthetic Profile 8 DVCC is synthesized
+ * from the codecs string (or defaulting to level 6 for 4K UHD when codecs is unavailable).
  *
  * For MEL sources (most UHD Blu-ray rips) this is lossless — all DV metadata is in the BL RPU.
  * For FEL sources the EL pixel enhancement is discarded; DV tone-mapping metadata is preserved.
@@ -44,6 +50,7 @@ class DvCompatVideoRenderer(
 	allowedJoiningTimeMs: Long,
 	enableDecoderFallback: Boolean,
 	private val forceCompatMode: Boolean,
+	private val dvP7Hint: AtomicBoolean,
 	eventHandler: Handler?,
 	eventListener: VideoRendererEventListener?,
 ) : MediaCodecVideoRenderer(
@@ -62,12 +69,10 @@ class DvCompatVideoRenderer(
 	 * Returns true if this is a Dolby Vision Profile 7 stream.
 	 *
 	 * Handles two source scenarios:
-	 * 1. Media3 correctly detected DV via BlockAdditionMapping → sampleMimeType = VIDEO_DOLBY_VISION
-	 *    with codecs string set (e.g. "dvhe.07.06")
-	 * 2. Media3 detected DV via BlockAdditionMapping but no codecs string → fall back to
-	 *    scanning initializationData for DVCC bytes
-	 * 3. Media3 missed DV detection (MKV HEVC track without recognized DV signaling) →
-	 *    sampleMimeType = VIDEO_H265, but initializationData may still contain DVCC bytes
+	 * 1. Media3 correctly detected DV → sampleMimeType = VIDEO_DOLBY_VISION, codecs = "dvhe.07.*"
+	 * 2. Media3 detected DV but no codecs string → scan initializationData for DVCC bytes
+	 * 3. Media3 missed DV detection (bloated CodecPrivate in MKV) → sampleMimeType = VIDEO_H265.
+	 *    In this case fall back to [dvP7Hint] which reflects Jellyfin server's pre-scan result.
 	 */
 	private fun isDvProfile7(format: Format?): Boolean {
 		if (format == null) return false
@@ -83,8 +88,10 @@ class DvCompatVideoRenderer(
 			}
 			MimeTypes.VIDEO_H265 -> {
 				// Fallback: MakeMKV-style MKV where Media3 may not set DV MIME type.
-				// Check if any initializationData entry is a valid Profile 7 DVCC record.
+				// DVCC lives in MKV BlockAdditionMapping, not initializationData — so byte
+				// scanning won't find it. Use Jellyfin's authoritative server-side signal instead.
 				format.initializationData.any { bytes -> getDvccProfile(bytes) == 7 }
+					|| dvP7Hint.get()
 			}
 			else -> false
 		}
@@ -131,31 +138,29 @@ class DvCompatVideoRenderer(
 	/**
 	 * Build a new [Format] with Profile 7 → Profile 8.1 rewrite.
 	 *
-	 * - Updates codecs string: "dvhe.07.*" → "dvhe.08.*"
+	 * - Updates codecs string: "dvhe.07.*" → "dvhe.08.*" (defaults to "dvhe.08.06" when absent)
 	 * - Patches DVCC bytes in initializationData (profile 7→8, el_present 1→0)
 	 * - If no DVCC found in initializationData, synthesizes Profile 8 DVCC from the
-	 *   codecs string so the hardware DV decoder receives proper configuration data
+	 *   codecs string (or level 6 as a safe default for 4K UHD content)
 	 * - Upgrades sampleMimeType from VIDEO_H265 to VIDEO_DOLBY_VISION when needed
 	 */
 	private fun patchToProfile8(format: Format): Format {
+		// When the source format is VIDEO_H265 (Media3 missed DV detection), there's no
+		// dvhe.07.xx codecs string — default to dvhe.08.06 (Profile 8.1, Level 6 / 4K UHD).
 		val p8Codecs = format.codecs
 			?.replace("dvhe.07", "dvhe.08")
 			?.replace("dvh1.07", "dvh1.08")
+			?: "dvhe.08.06"
 
 		// Patch DVCC bytes in all initializationData entries
 		var p8InitData = format.initializationData.map { bytes -> patchDvccBytes(bytes) }
 
 		// If no Profile 8 DVCC ended up in initializationData after patching,
-		// Media3 likely stored the DVCC only for MIME/codecs derivation (not in initData).
-		// Synthesize and append Profile 8 DVCC so the DV hardware decoder is properly configured.
+		// synthesize and append one so the DV hardware decoder is properly configured.
 		if (p8InitData.none { bytes -> getDvccProfile(bytes) == 8 }) {
-			val syntheticDvcc = buildProfile8Dvcc(format.codecs ?: p8Codecs)
-			if (syntheticDvcc != null) {
-				Timber.d("DV compat: no DVCC in initializationData — injecting synthetic Profile 8 DVCC")
-				p8InitData = p8InitData + syntheticDvcc
-			} else {
-				Timber.w("DV compat: could not synthesize DVCC (codecs=${format.codecs})")
-			}
+			val syntheticDvcc = buildProfile8Dvcc(format.codecs)
+			Timber.d("DV compat: no DVCC in initializationData — injecting synthetic Profile 8 DVCC")
+			p8InitData = p8InitData + syntheticDvcc
 		}
 
 		val builder = format.buildUpon()
@@ -225,20 +230,18 @@ class DvCompatVideoRenderer(
 	}
 
 	/**
-	 * Synthesizes a minimal Profile 8 DOVIDecoderConfigurationRecord from the codecs string.
+	 * Synthesizes a minimal Profile 8 DOVIDecoderConfigurationRecord.
 	 *
-	 * Used when Media3 derived MIME type/codecs from BlockAddIDExtraData but did not include
-	 * the raw bytes in initializationData.
-	 *
-	 * @param codecs e.g. "dvhe.07.06" — the profile 7 source codecs string
+	 * Extracts the level from the codecs string (e.g. "dvhe.07.06" → level 6).
+	 * Falls back to level 6 (50 Mbps, suitable for 4K UHD) when the codecs string
+	 * is null or not a DV-format string.
 	 */
-	private fun buildProfile8Dvcc(codecs: String?): ByteArray? {
-		if (codecs == null) return null
-		// "dvhe.07.06" → parts[2] = "06" = level 6
-		val level = codecs.split(".").getOrNull(2)?.toIntOrNull() ?: return null
+	private fun buildProfile8Dvcc(codecs: String?): ByteArray {
+		val level = codecs?.split(".")?.getOrNull(2)?.toIntOrNull()
+			?.takeIf { it in 1..13 } ?: 6
 		// Profile 8.1: dv_profile=8, same level, rpu_present=1, el_present=0, bl_present=1
 		val word = (8 shl 9) or (level shl 3) or (1 shl 2) or (0 shl 1) or 1
-		Timber.d("DV compat: synthesized Profile 8 DVCC for level=$level (word=0x${word.toString(16)})")
+		Timber.d("DV compat: synthesized Profile 8 DVCC level=$level (codecs=$codecs, word=0x${word.toString(16)})")
 		return byteArrayOf(
 			0x01.toByte(),                          // dv_version_major = 1
 			0x00.toByte(),                          // dv_version_minor = 0
@@ -266,7 +269,7 @@ class DvCompatVideoRenderer(
 		Timber.d(
 			"DV compat: onInputFormatChanged " +
 				"mime=${fmt?.sampleMimeType} codecs=${fmt?.codecs} " +
-				"initDataCount=${fmt?.initializationData?.size}"
+				"initDataCount=${fmt?.initializationData?.size} dvP7Hint=${dvP7Hint.get()}"
 		)
 		fmt?.initializationData?.forEachIndexed { i, bytes ->
 			val preview = bytes.take(8).joinToString(" ") { "%02X".format(it) }
@@ -280,7 +283,6 @@ class DvCompatVideoRenderer(
 			Timber.d("DV compat: Profile 7 detected — rewriting as Profile 8.1 (force=$forceCompatMode)")
 			formatHolder.format = patchToProfile8(formatHolder.format!!)
 
-			// Log the patched format
 			val patched = formatHolder.format
 			Timber.d(
 				"DV compat: patched → mime=${patched?.sampleMimeType} codecs=${patched?.codecs} " +
@@ -304,7 +306,7 @@ class DvCompatVideoRenderer(
 	): List<MediaCodecInfo> {
 		Timber.d(
 			"DV compat: getDecoderInfos mime=${format.sampleMimeType} codecs=${format.codecs} " +
-				"isDvP7=${isDvProfile7(format)}"
+				"isDvP7=${isDvProfile7(format)} dvP7Hint=${dvP7Hint.get()}"
 		)
 		if (isDvProfile7(format)) {
 			val p8Format = patchToProfile8(format)
