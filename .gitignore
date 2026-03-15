@@ -7,3 +7,7 @@ local.properties
 .kotlin/
 build/
 captures/
+sync.sh
+release.sh
+sync.sh
+release.sh
